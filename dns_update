@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+email=""
+zone=""
+key=""
+
+ipv4="$(curl -s http://v4.ipv6-test.com/api/myip.php)"
+ipv6="$(curl -s http://v6.ipv6-test.com/api/myip.php)"
+
+echo IPv4 = ${ipv4}
+echo IPv6 = ${ipv6}
+
+A_records="$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${zone}/dns_records?type=A&match=any&per_page=100" -H "X-Auth-Email: ${email}" -H "X-Auth-Key: ${key}" -H "Content-Type: application/json")"
+AAAA_records="$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${zone}/dns_records?type=AAAA&match=any&per_page=100" -H "X-Auth-Email: ${email}" -H "X-Auth-Key: ${key}" -H "Content-Type: application/json")"
+
+i=0
+for id in $(jq --raw-output ".result[].id" <<< "${A_records}"); do
+  ip="$(jq --raw-output ".result[${i}].content" <<< "${A_records}")"
+  if [[ "${ip}" != "${ipv4}" ]]; then
+    name="$(jq --raw-output ".result[${i}].name" <<< "${A_records}")"
+    content="${ipv4}"
+    ttl="$(jq --raw-output ".result[${i}].ttl" <<< "${A_records}")"
+    proxied="$(jq --raw-output ".result[${i}].proxied" <<< "${A_records}")"
+    echo
+    echo changing ${id} \(A\) [${ip}] to ${content}
+    curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/${zone}/dns_records/${id}" \
+      -H "X-Auth-Email: ${email}" \
+      -H "X-Auth-Key: ${key}" \
+      -H "Content-Type: application/json" \
+      --data "{\"type\":\"A\",\"name\":\"${name}\",\"content\":\"${content}\",\"ttl\":${ttl},\"proxied\":${proxied}}" | jq --raw-output '.success'
+  fi
+  i=$((i + 1))
+done
+i=0
+for id in $(jq --raw-output ".result[].id" <<< "${AAAA_records}"); do
+  ip="$(jq --raw-output ".result[${i}].content" <<< "${AAAA_records}")"
+  if [[ "${ip}" != "${ipv6}" ]]; then
+    name="$(jq --raw-output ".result[${i}].name" <<< "${AAAA_records}")"
+    content="${ipv6}"
+    ttl="$(jq --raw-output ".result[${i}].ttl" <<< "${AAAA_records}")"
+    proxied="$(jq --raw-output ".result[${i}].proxied" <<< "${AAAA_records}")"
+    echo
+    echo changing ${id} \(AAAA\) [${ip}] to ${content}
+    curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/${zone}/dns_records/${id}" \
+      -H "X-Auth-Email: ${email}" \
+      -H "X-Auth-Key: ${key}" \
+      -H "Content-Type: application/json" \
+      --data "{\"type\":\"AAAA\",\"name\":\"${name}\",\"content\":\"${content}\",\"ttl\":${ttl},\"proxied\":${proxied}}" | jq --raw-output '.success'
+  fi
+  i=$((i + 1))
+done
